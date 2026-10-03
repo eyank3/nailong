@@ -1,0 +1,8 @@
+# Original reference and unused duplicate asset stay local.
+assets/source-character.jpg
+assets/milfroggy.png
+
+# Local editor and system files.
+.DS_Store
+Thumbs.db
+*.log

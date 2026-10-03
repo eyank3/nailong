@@ -580,16 +580,17 @@
     const h = Math.min(68, Math.max(52, H * .085)) * scale;
     const w = h * avatar.naturalWidth / avatar.naturalHeight;
     ctx.save();
-    ctx.translate(point.x, point.y - h);
+    // Keep the feet planted on the platform while the body compresses.
+    ctx.translate(point.x, point.y);
     ctx.rotate(tilt || 0);
     ctx.scale(1 + squash * .08, 1 - squash * .06);
     ctx.globalAlpha = .15;
     ctx.fillStyle = '#6a542d';
     ctx.beginPath();
-    ctx.ellipse(0, h + 3, w * .42, 5, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 3, w * .42, 5, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.globalAlpha = 1;
-    ctx.drawImage(avatar, -w / 2, 0, w, h);
+    ctx.drawImage(avatar, -w / 2, -h, w, h);
     ctx.restore();
   }
 
@@ -615,7 +616,20 @@
       const age = Math.max(0, (now - fall.started) / 1000);
       return { x: fall.x, z: fall.z, y: fall.y, scale: 1 - Math.min(.25, age * .08), squash: 0, tilt: -.22 - age * .45 };
     }
-    return { x: player.x, z: player.z, y: player.y, scale: 1, squash: mode === 'charging' ? .6 : 0, tilt: 0 };
+    if (mode === 'charging' && charge) {
+      const held = clamp((now - charge.start) / MAX_CHARGE_MS, 0, 1);
+      const eased = smooth(held);
+      const pulse = Math.sin((now - charge.start) * .018) * .025 * eased;
+      return {
+        x: player.x,
+        z: player.z,
+        y: player.y,
+        scale: 1 - eased * .025,
+        squash: eased * .92 + pulse,
+        tilt: 0
+      };
+    }
+    return { x: player.x, z: player.z, y: player.y, scale: 1, squash: 0, tilt: 0 };
   }
 
   function render(now) {

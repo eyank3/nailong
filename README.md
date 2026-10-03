@@ -19,7 +19,7 @@
 - `index.html`：游戏入口
 - `style.css`：响应式界面与视觉样式
 - `game.js`：跳跃、计分、碰撞和音效逻辑
-- `assets/nailong.png`：从附件角色图处理出的透明奶龙立绘
+- `assets/nailong.webp`：从附件角色图处理出的透明奶龙立绘（移动端优化）
 - `assets/charge.mp3`：原蓄力音效
 - `assets/center.mp3`：从用户提供视频中提取的“安迪”中心命中音效
 - `assets/laugh.mp3`：从用户提供视频后段提取的大笑音效

@@ -45,7 +45,7 @@ canvas { display: block; width: 100%; height: 100%; }
 .primary-button:active { transform: translateY(1px) scale(.98); }
 .control-hint { margin-top: 14px; color: #777985; font-size: 11px; }
 .control-figure { height: 42px; margin: 3px auto 6px; color: #464752; }
-.figure-frog { display: inline-block; width: 32px; height: 35px; vertical-align: middle; background: url('./assets/nailong.png') center bottom / contain no-repeat; filter: drop-shadow(0 2px 0 rgba(0,0,0,.13)); }
+.figure-frog { display: inline-block; width: 32px; height: 35px; vertical-align: middle; background: url('./assets/nailong.webp?v=1') center bottom / contain no-repeat; filter: drop-shadow(0 2px 0 rgba(0,0,0,.13)); }
 .figure-arrow { display: inline-block; margin-left: 17px; font-size: 30px; vertical-align: middle; transform: translateY(-3px); }
 .fail-card { color: #f2f2f5; background: rgba(38,39,45,.93); border-color: rgba(255,255,255,.06); padding-top: 22px; padding-bottom: 22px; }
 .fail-card p, .fail-card .control-hint, .fail-card .eyebrow { color: #d0d1d8; }

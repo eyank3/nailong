@@ -3,14 +3,17 @@
   const ctx = canvas.getContext('2d');
   const gameShell = document.querySelector('.game-shell');
   const avatar = new Image();
-  avatar.src = './assets/nailong.png';
+  avatar.decoding = 'async';
+  avatar.src = './assets/nailong.webp?v=1';
 
-  const chargeAudio = new Audio('./assets/charge.mp3?v=4');
-  const centerAudio = new Audio('./assets/center.mp3?v=1');
-  const laughAudio = new Audio('./assets/laugh.mp3');
-  chargeAudio.preload = 'auto';
-  centerAudio.preload = 'auto';
-  laughAudio.preload = 'auto';
+  const audioUrls = {
+    charge: './assets/charge.mp3?v=4',
+    center: './assets/center.mp3?v=1',
+    laugh: './assets/laugh.mp3?v=1'
+  };
+  const audioElements = { charge: null, center: null, laugh: null };
+  const audioBufferPromises = { charge: null, center: null, laugh: null };
+  let idleAudioScheduled = false;
 
   // Decode the short clips as soon as the page opens. Mobile browsers can take
   // a noticeable amount of time to start an HTMLAudioElement on its first tap;
@@ -18,9 +21,18 @@
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
   let audioContext = null;
   let audioBus = null;
-  let audioLoadPromise = null;
   const audioBuffers = { charge: null, center: null, laugh: null };
   const audioSources = { charge: null, center: null, laugh: null };
+
+  function getElementAudio(name) {
+    if (audioElements[name]) return audioElements[name];
+    const audio = new Audio();
+    audio.preload = 'none';
+    audio.src = audioUrls[name];
+    audio.muted = muted;
+    audioElements[name] = audio;
+    return audio;
+  }
 
   function setupAudioContext() {
     if (!AudioContextClass) return null;
@@ -37,22 +49,32 @@
     return audioContext;
   }
 
-  function warmAudio() {
+  function loadAudioBuffer(name) {
     const context = setupAudioContext();
-    if (!context) return Promise.resolve();
-    if (context.state === 'suspended') context.resume().catch(() => {});
-    if (audioLoadPromise) return audioLoadPromise;
-    const files = {
-      charge: './assets/charge.mp3?v=4',
-      center: './assets/center.mp3?v=1',
-      laugh: './assets/laugh.mp3'
-    };
-    audioLoadPromise = Promise.all(Object.entries(files).map(async ([name, url]) => {
-      const response = await fetch(url, { cache: 'force-cache' });
+    if (!context) return Promise.resolve(null);
+    if (audioBuffers[name]) return Promise.resolve(audioBuffers[name]);
+    if (audioBufferPromises[name]) return audioBufferPromises[name];
+    audioBufferPromises[name] = fetch(audioUrls[name], { cache: 'force-cache' }).then(async response => {
       if (!response.ok) throw new Error('Audio request failed');
       audioBuffers[name] = await context.decodeAudioData(await response.arrayBuffer());
-    })).catch(() => {});
-    return audioLoadPromise;
+      return audioBuffers[name];
+    }).catch(() => null);
+    return audioBufferPromises[name];
+  }
+
+  function warmAudio() {
+    const context = setupAudioContext();
+    if (!context) return;
+    if (context.state === 'suspended') context.resume().catch(() => {});
+    // The charge clip is needed on the first press; the other two can wait.
+    loadAudioBuffer('charge');
+    if (!idleAudioScheduled) {
+      idleAudioScheduled = true;
+      setTimeout(() => {
+        loadAudioBuffer('center');
+        loadAudioBuffer('laugh');
+      }, 2500);
+    }
   }
 
   function stopDecodedSound(name) {
@@ -85,15 +107,16 @@
     }
   }
 
-  function playElementSound(audio) {
+  function playElementSound(name) {
     if (muted) return;
-    audio.currentTime = 0;
-    audio.play().catch(() => {});
+    const element = getElementAudio(name);
+    element.currentTime = 0;
+    element.play().catch(() => {});
   }
 
   function stopChargeSound() {
     stopDecodedSound('charge');
-    chargeAudio.pause();
+    if (audioElements.charge) audioElements.charge.pause();
   }
 
   const scoreNode = document.getElementById('score');
@@ -161,7 +184,7 @@
 
   function setMuted(value) {
     muted = value;
-    [chargeAudio, centerAudio, laughAudio].forEach(audio => { audio.muted = muted; });
+    Object.values(audioElements).forEach(audio => { if (audio) audio.muted = muted; });
     if (audioBus) audioBus.gain.value = muted ? 0 : 1;
     settingsButton.textContent = muted ? '×' : '•••';
     settingsButton.setAttribute('aria-pressed', String(muted));
@@ -198,8 +221,10 @@
     centerHit = null;
     stopChargeSound();
     stopDecodedSound('center');
-    centerAudio.pause();
-    centerAudio.currentTime = 0;
+    if (audioElements.center) {
+      audioElements.center.pause();
+      audioElements.center.currentTime = 0;
+    }
     if (failTimer) clearTimeout(failTimer);
     failTimer = null;
     scoreNode.textContent = '0';
@@ -244,7 +269,7 @@
     warmAudio();
     charge = { start: performance.now() };
     mode = 'charging';
-    if (!playDecodedSound('charge')) playElementSound(chargeAudio);
+    if (!playDecodedSound('charge')) playElementSound('charge');
   }
 
   function endCharge() {
@@ -316,7 +341,7 @@
     scoreNode.textContent = String(score);
     if (hitCenter) {
       centerHit = { x: target.x, z: target.z, started: performance.now(), points };
-      if (!playDecodedSound('center')) playElementSound(centerAudio);
+      if (!playDecodedSound('center')) playElementSound('center');
       showNotice('中心命中  +' + points);
     }
     camera.targetX = 0;
@@ -331,7 +356,7 @@
   function fail(point) {
     if (mode === 'failed') return;
     mode = 'failed';
-    centerAudio.pause();
+    if (audioElements.center) audioElements.center.pause();
     stopDecodedSound('center');
     stopChargeSound();
     charge = null;
@@ -345,7 +370,7 @@
       vy: 20,
       started: performance.now()
     };
-    if (!playDecodedSound('laugh')) playElementSound(laughAudio);
+    if (!playDecodedSound('laugh')) playElementSound('laugh');
     finalScoreNode.textContent = String(score);
     const isRecord = score > bestScore;
     if (isRecord) {

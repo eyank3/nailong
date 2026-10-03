@@ -5,12 +5,96 @@
   const avatar = new Image();
   avatar.src = './assets/nailong.png';
 
-  const chargeAudio = new Audio('./assets/charge.mp3?v=3');
+  const chargeAudio = new Audio('./assets/charge.mp3?v=4');
   const centerAudio = new Audio('./assets/center.mp3?v=1');
   const laughAudio = new Audio('./assets/laugh.mp3');
   chargeAudio.preload = 'auto';
   centerAudio.preload = 'auto';
   laughAudio.preload = 'auto';
+
+  // Decode the short clips as soon as the page opens. Mobile browsers can take
+  // a noticeable amount of time to start an HTMLAudioElement on its first tap;
+  // Web Audio lets the actual press trigger a ready in-memory buffer instead.
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  let audioContext = null;
+  let audioBus = null;
+  let audioLoadPromise = null;
+  const audioBuffers = { charge: null, center: null, laugh: null };
+  const audioSources = { charge: null, center: null, laugh: null };
+
+  function setupAudioContext() {
+    if (!AudioContextClass) return null;
+    if (audioContext) return audioContext;
+    try {
+      audioContext = new AudioContextClass({ latencyHint: 'interactive' });
+      audioBus = audioContext.createGain();
+      audioBus.gain.value = 1;
+      audioBus.connect(audioContext.destination);
+    } catch (error) {
+      audioContext = null;
+      audioBus = null;
+    }
+    return audioContext;
+  }
+
+  function warmAudio() {
+    const context = setupAudioContext();
+    if (!context) return Promise.resolve();
+    if (context.state === 'suspended') context.resume().catch(() => {});
+    if (audioLoadPromise) return audioLoadPromise;
+    const files = {
+      charge: './assets/charge.mp3?v=4',
+      center: './assets/center.mp3?v=1',
+      laugh: './assets/laugh.mp3'
+    };
+    audioLoadPromise = Promise.all(Object.entries(files).map(async ([name, url]) => {
+      const response = await fetch(url, { cache: 'force-cache' });
+      if (!response.ok) throw new Error('Audio request failed');
+      audioBuffers[name] = await context.decodeAudioData(await response.arrayBuffer());
+    })).catch(() => {});
+    return audioLoadPromise;
+  }
+
+  function stopDecodedSound(name) {
+    const source = audioSources[name];
+    if (!source) return;
+    try { source.stop(); } catch (error) {}
+    try { source.disconnect(); } catch (error) {}
+    audioSources[name] = null;
+  }
+
+  function playDecodedSound(name) {
+    const context = setupAudioContext();
+    const buffer = audioBuffers[name];
+    if (!context || !audioBus || !buffer || muted) return false;
+    if (context.state === 'suspended') context.resume().catch(() => {});
+    stopDecodedSound(name);
+    try {
+      const source = context.createBufferSource();
+      source.buffer = buffer;
+      source.connect(audioBus);
+      source.onended = () => {
+        if (audioSources[name] === source) audioSources[name] = null;
+        try { source.disconnect(); } catch (error) {}
+      };
+      source.start(0);
+      audioSources[name] = source;
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function playElementSound(audio) {
+    if (muted) return;
+    audio.currentTime = 0;
+    audio.play().catch(() => {});
+  }
+
+  function stopChargeSound() {
+    stopDecodedSound('charge');
+    chargeAudio.pause();
+  }
 
   const scoreNode = document.getElementById('score');
   const finalScoreNode = document.getElementById('final-score');
@@ -78,6 +162,7 @@
   function setMuted(value) {
     muted = value;
     [chargeAudio, centerAudio, laughAudio].forEach(audio => { audio.muted = muted; });
+    if (audioBus) audioBus.gain.value = muted ? 0 : 1;
     settingsButton.textContent = muted ? '×' : '•••';
     settingsButton.setAttribute('aria-pressed', String(muted));
     showNotice(muted ? '声音已关闭' : '声音已开启');
@@ -111,6 +196,8 @@
     fall = null;
     particles = [];
     centerHit = null;
+    stopChargeSound();
+    stopDecodedSound('center');
     centerAudio.pause();
     centerAudio.currentTime = 0;
     if (failTimer) clearTimeout(failTimer);
@@ -154,17 +241,17 @@
   function beginCharge() {
     if (!startScreen.classList.contains('hidden')) return;
     if (mode !== 'idle') return;
+    warmAudio();
     charge = { start: performance.now() };
     mode = 'charging';
-    chargeAudio.currentTime = 0;
-    chargeAudio.play().catch(() => {});
+    if (!playDecodedSound('charge')) playElementSound(chargeAudio);
   }
 
   function endCharge() {
     if (mode !== 'charging' || !charge) return;
     const elapsed = performance.now() - charge.start;
     const power = clamp(elapsed / MAX_CHARGE_MS, 0.08, 1.14);
-    chargeAudio.pause();
+    stopChargeSound();
     charge = null;
     startJump(power);
   }
@@ -229,8 +316,7 @@
     scoreNode.textContent = String(score);
     if (hitCenter) {
       centerHit = { x: target.x, z: target.z, started: performance.now(), points };
-      centerAudio.currentTime = 0;
-      centerAudio.play().catch(() => {});
+      if (!playDecodedSound('center')) playElementSound(centerAudio);
       showNotice('中心命中  +' + points);
     }
     camera.targetX = 0;
@@ -246,6 +332,8 @@
     if (mode === 'failed') return;
     mode = 'failed';
     centerAudio.pause();
+    stopDecodedSound('center');
+    stopChargeSound();
     charge = null;
     jump = null;
     fall = {
@@ -257,8 +345,7 @@
       vy: 20,
       started: performance.now()
     };
-    laughAudio.currentTime = 0;
-    laughAudio.play().catch(() => {});
+    if (!playDecodedSound('laugh')) playElementSound(laughAudio);
     finalScoreNode.textContent = String(score);
     const isRecord = score > bestScore;
     if (isRecord) {
@@ -560,7 +647,9 @@
   }
 
   bindPress(canvas);
+  startButton.addEventListener('pointerdown', () => { warmAudio(); });
   startButton.addEventListener('click', () => {
+    warmAudio();
     resetGame();
     startScreen.classList.add('hidden');
     lastTime = performance.now();
@@ -568,12 +657,14 @@
   startScreen.addEventListener('pointerdown', event => {
     if (event.target === startButton) return;
     event.preventDefault();
+    warmAudio();
     resetGame();
     startScreen.classList.add('hidden');
     lastTime = performance.now();
     beginCharge();
   });
   restartButton.addEventListener('click', () => {
+    warmAudio();
     resetGame();
     startScreen.classList.add('hidden');
   });
@@ -612,6 +703,7 @@
   window.addEventListener('keydown', event => {
     if (event.code === 'Space' || event.code === 'Enter') {
       event.preventDefault();
+      warmAudio();
       if (!startScreen.classList.contains('hidden')) {
         resetGame();
         startScreen.classList.add('hidden');
@@ -633,5 +725,6 @@
 
   resize();
   resetGame();
+  warmAudio();
   requestAnimationFrame(loop);
 })();
